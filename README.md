@@ -6,8 +6,8 @@ a collection of config files
 - neovim
 - starship
 - zsh (oh-my-zsh)
-- - zsh-autocompletions
-- - zsh-syntax-highlighting
-- - you-should-use
+ - zsh-autocompletions
+ - zsh-syntax-highlighting
+ - you-should-use
 - Hyprland
-- - split-monitor-workspaces
+ - split-monitor-workspaces
