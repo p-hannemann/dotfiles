@@ -1,0 +1,206 @@
+#!/bin/python
+import os, sys
+import requests
+from requests.auth import AuthBase
+import json
+from datetime import datetime, timedelta
+import subprocess
+
+import hmac
+import base64
+import hashlib
+
+import argparse
+import re
+
+import colorama
+from colorama import init, Fore, Back, Style
+
+class HVVAuth(AuthBase):
+
+    def __init__(self, payloadFunc):
+        # setup any auth-related data here
+        self.password = "vw5iX/TK{mXK"
+        self.username = "hbtweb"
+
+        self.sig = base64.b64encode(hmac.new(self.password.encode("UTF-8"), (json.dumps(payloadFunc)).encode('UTF-8'), hashlib.sha1).digest())
+
+    def __call__(self, r):
+        # modify and return the request
+        r.headers['geofox-auth-signature'] = self.sig.decode("UTF-8")
+        r.headers['geofox-auth-user'] = self.username
+        return r
+
+class HVVClient(object):
+
+    """ A wrapper for the geofox API """
+
+    def __init__(self):
+        self.session = requests.session()
+        # pretend to be a normal human bei... an ordinary browser
+        self.session.headers.update(
+            {
+                "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:63.0) Gecko/20100101 Firefox/63.0",
+                "Accept": "application/json",
+                "Accept-Language": "en,en-US;q=0.7,de;q=0.3",
+            }
+        )
+
+    def findStation(self, name):
+        data = {"version":34,"language":"en","theName":{"name":"","city":"","type":"UNKNOWN"},"maxList":15,"allowTypeSwitch":True}
+        data["theName"]["name"] = name
+        r = self.session.post("https://www.hvv.de/geofox/checkName", json=data, auth=HVVAuth(data))
+        try:
+            js = r.json()
+        except Exception as e:
+            print(name, r.text)
+            raise e
+        if js.get("returnCode", "") == "OK" and js.get("results"):
+            return js.get("results", [None])[0]
+        else:
+            return None
+
+    def getRoute(self, start, destination, time, timeIsDeparture=True):
+        r = self.session.post("https://www.hvv.de/geofox/init", json={}, auth=HVVAuth({}))
+        time_object = {
+            "date": "{:%d.%m.%Y}".format(time),
+            "time": "{:%H:%M}".format(time)
+        }
+        # default search settings
+        data = {"version":34,"language":"en","start":{},"dest":{},"toStartBy":"FOOTPATH","toDestBy":"FOOTPATH","time":{"date":"29.10.2018","time":"13:58"},"timeIsDeparture":True,"schedulesBefore":0,"schedulesAfter":4,"intermediateStops":True,"tariffInfoSelector":[{"tariff":"HVV","tariffRegions":False,"kinds":["1"]},{"tariff":"SH","tariffRegions":False,"kinds":["1"]}],"penalties":[{"name":"desiredType","value":"longdistancebus,fasttrain&extrafasttrain:10000"}],"returnContSearchData":True,"realtime":"REALTIME"}
+        data["start"] = start
+        data["dest"] = destination
+        data["time"] = time_object
+        data["timeIsDeparture"] = timeIsDeparture
+        r = self.session.post("https://www.hvv.de/geofox/getRoute", json=data, auth=HVVAuth(data))
+        return(r.json())
+
+    def prettyPrintRoute(self, route):
+        def print_table(table):
+            col_width = [max(len(x) for x in col) for col in zip(*table)]
+            for i, line in enumerate(table):
+                print((Style.BRIGHT if i % 2 else Style.DIM) + "| " + " | ".join("{:{}}".format(x, col_width[i]) for i, x in enumerate(line)) + " |")
+        if not route.get("realtimeSchedules", []):
+            print("Error, no routes found")
+            return
+
+        table = [["Nr.", "Depart", "Arrive", "Duration", "Steps"]]
+        for i, r in enumerate(route["realtimeSchedules"]):
+            table.append([
+                str(i),
+                " ".join(r["scheduleElements"][0]["from"]["depTime"].values()),
+                " ".join(r["scheduleElements"][-1]["to"]["arrTime"].values()),
+                "{}:{}".format(int(r["time"]/60), int(r["time"]) % 60),
+                " > ".join([l["line"]["name"] for l in r["scheduleElements"]])
+                ])
+        print_table(table)
+
+def parseTime(s):
+    m = 0
+    h = 0
+    ex = re.compile("([+\-]?\d+)([mh]?)")
+    match = ex.findall(s)[0]
+    if len(match) > 1:
+        if match[1].lower() == "m":
+            m = int(match[0])
+        else:
+            h = int(match[0])
+    return timedelta(minutes=m, hours=h)
+
+def main():
+
+    # enable color output
+    colorama.init(autoreset=True)
+
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="action", required=True)
+    widgetparser = subparsers.add_parser("widget,", aliases=["w"])
+    routeparser = subparsers.add_parser("route", aliases=["r"])
+    routeparser.add_argument('-v', action="store_true", help='Dump json')
+    routeparser.add_argument('-d', help='Departure time')
+    routeparser.add_argument('-a', help='Arrival time (overrides -d)')
+    routeparser.add_argument('start', help='name of the starting location')
+    routeparser.add_argument('destination', nargs="?", help='name of the destination location')
+    aliasparser = subparsers.add_parser("alias", aliases=["a"])
+    aliasparser.add_argument("name", nargs="?", help="alias name, omit to list all aliases")
+    aliasparser.add_argument("value", nargs="?", help="alias value, omit to show current value")
+    aliasparser.add_argument("-r", "--remove", action="store_true", help="remove alias")
+    args = vars(parser.parse_args())
+    #print(args)
+
+    configdir = os.path.join(os.path.expanduser("~"), ".config", "hvv")
+    if not os.path.exists(configdir):
+        os.makedirs(configdir)
+    aliasfile = os.path.join(configdir, "aliases.json")
+    aliases = {}
+    if os.path.isfile(aliasfile):
+        aliases = json.load(open(aliasfile, "r"))
+
+    if args["action"] in ["r", "route"]:
+        now = datetime.now()
+        time = now
+        timeIsDeparture = True
+        if args["d"]:
+            time += parseTime(args["d"])
+        if args["a"]:
+            time += parseTime(args["a"])
+            timeIsDeparture = False
+
+        startName = args["start"]
+        destName = args["destination"]
+        if not destName:
+            if os.path.isfile(os.path.join(configdir, "locate.py")):
+                destName = startName
+                startName = subprocess.Popen("python "+os.path.join(configdir, "locate.py"), shell=True, stdout=subprocess.PIPE, universal_newlines=True).stdout.read().strip("\n ")
+                if startName:
+                    print(f"Auto-locator determined location as {Fore.CYAN}{startName}")
+        if not destName:
+            print("No start location given and auto-locator failed.")
+            return
+
+        hvv = HVVClient()
+        start = hvv.findStation(aliases.get(startName.lower(), startName))
+        dest  = hvv.findStation(aliases.get(destName.lower(), destName))
+        if not start:
+            print(f"Couldn't find station '{Fore.RED}{startName}{Fore.RESET}', aborting...")
+            return
+        if not dest:
+            print(f"Couldn't find station '{Fore.RED}{destName}{Fore.RESET}', aborting...")
+            return
+        print("From: {}{}".format(Fore.CYAN, start["name"]))
+        print("To  : {}{}".format(Fore.CYAN,  dest["name"]))
+        print(("Departure" if timeIsDeparture else "Arrival") + ": {}{:%H:%M}".format(Fore.GREEN, time))
+        route = hvv.getRoute(start, dest, time, timeIsDeparture)
+        hvv.prettyPrintRoute(route)
+        if args["v"]:
+            print(json.dumps(route, indent=4))
+    elif args["action"] in ["a", "alias"]:
+        name = args["name"]
+        value = args["value"]
+        if name:
+            name = name.lower()
+            if not value:
+                if args["remove"]:
+                    if aliases.pop(name, None):
+                        print("Removed alias {}".format(name))
+                    else:
+                        print("Alias {} doesn't exist.".format(name))
+                else:
+                    if name in aliases:
+                        print("{} = {}".format(name, aliases[name]))
+                    else:
+                        print("Alias {} doesn't exist.".format(name))
+            else:
+                oldValue = aliases.get(name, None)
+                aliases[name] = value
+                if oldValue:
+                    print("Changed alias {} from {} to {}".format(name, oldValue, value))
+                else:
+                    print("Created new alias {} with value {}".format(name, value))
+        else:
+            print("Aliases: ")
+            print("\n".join("{} = {}".format(k, v) for k,v in aliases.items()))
+        json.dump(aliases, open(aliasfile, "w+"))
+
+if __name__ == "__main__":
+    main()
