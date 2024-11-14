@@ -10,4 +10,15 @@ a collection of config files
   - zsh-syntax-highlighting
   - you-should-use
 - Hyprland
-  - split-monitor-workspaces
+  - Plugins:
+    - split-monitor-workspaces
+  - Packages:
+    - hyprlock
+    - hyprpaper
+    - hyprpicker
+    - hyprshot
+      - jq
+      - grim
+      - slurp
+      - wl-clipboard
+      - libnotify
