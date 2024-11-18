@@ -76,8 +76,9 @@
   },
 
   "custom/notification": {
-    "tooltip": false,
-    "format": "{icon}  {}",
+    "tooltip": true,
+    "tooltip-format": "<tt><small>{}</small></tt>",
+    "format": "{icon} {0}",
     "format-icons": {
       "notification": "<span foreground='red'><sup></sup></span>",
       "none": "",
@@ -93,7 +94,7 @@
     "exec": "swaync-client -swb",
     "on-click": "sh -c '(sleep 0.5s; swaync-client -t -sw)' & disown",
     "on-click-right": "swaync-client -d -sw",
-    "escape": true
+    //"escape": true
   },
 
   "custom/power_btn": {
