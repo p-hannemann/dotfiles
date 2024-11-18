@@ -22,3 +22,6 @@ a collection of config files
       - slurp
       - wl-clipboard
       - libnotify
+networkmanager
+  - network-manager-applet
+1Password
