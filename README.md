@@ -3,7 +3,13 @@ a collection of config files
 ----------
 ### used packages (Arch Linux)
 - yay
+- kitty
 - neovim
+  - ripgrep
+  - fd
+  - nerd-fonts
+  - lazygit
+  - luarocks
 - starship
 - zsh (oh-my-zsh)
   - zsh-autocompletions
