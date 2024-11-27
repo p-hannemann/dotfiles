@@ -30,6 +30,6 @@ a collection of config files
       - `wl-copy`: clipboard utility (provided by wl-clipboard)
       - `jq`: json utility to parse hyprctl output
       - `notify-send`: to show notifications (provided by libnotify)
-networkmanager
+- networkmanager
   - network-manager-applet
 1Password
