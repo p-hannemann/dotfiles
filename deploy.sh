@@ -45,3 +45,9 @@ for file in ~/.dotfiles/bin/*; do
 done
 
 # symlink ~/.dotfiles/.config/keyd /etc/keyd sudo
+
+# ~/Pictures/screenshots
+mkdir -p ~/Pictures/wallpaper
+for file in ~/.dotfiles/Pictures/wallpaper/*; do
+  symlink $file ~/Pictures/wallpaper/$(basename $file)
+done
